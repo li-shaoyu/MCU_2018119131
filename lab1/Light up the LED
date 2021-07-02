@@ -1,0 +1,101 @@
+1. 准备工作
+硬件准备
+开发板
+首先需要准备一个小熊派IoT开发板,并通过USB线与电脑连接。
+mark
+
+软件准备
+需要安装好Keil - MDK及芯片对应的包，以便编译和下载生成的代码,可参考MDK安装教程
+2.创建工程
+选择芯片型号
+打开STM32CubeMX，打开MCU选择器：
+
+mark
+
+搜索并选中芯片STM32L431RCT6:
+
+mark
+
+配置时钟源
+如果选择使用外部高速时钟（HSE），则需要在System Core中配置RCC；
+如果使用默认内部时钟（HSI），这一步可以略过；
+这里我都使用外部时钟：
+
+mark
+
+配置GPIO引脚
+查看原理图，确定控制LED引脚，这里我们的LED使用的是PC13引脚。
+
+mark
+
+所以接下来我们选择配置PC13引脚：
+
+mark
+
+配置时钟树
+STM32L4的最高主频到80M，所以配置PLL，最后使HCLK = 80Mhz即可：
+
+mark
+
+生成工程设置
+mark
+
+代码生成设置
+最后设置生成独立的初始化文件：
+
+mark
+
+生成代码
+点击GENERATE CODE即可生成MDK-V5工程：
+
+mark
+
+生成成功
+mark
+
+3. 在MDK中编写、编译、下载用户代码
+编写用户代码
+STM32CubeMX生成的代码目录如下：
+
+mark
+
+进入MDK-ARM文件夹目录，打开工程：
+
+mark
+
+在main.c中的main函数中编写简单的用户代码：
+
+  while (1)
+  {
+    /* USER CODE END WHILE */
+    /* USER CODE BEGIN 3 */
+    HAL_Delay(200);
+    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+  }
+编译代码
+点击如图所示的按钮编译工程
+image.png
+
+编译成功
+mark
+
+设置下载器
+点击如图所示按钮打开设置页面
+image.png
+
+进行下载设置，选择“ST-Link Debugger”，并点击“Settings”。
+mark
+在“Flash Download”菜单下勾选“Reset and Run”选项，已达到烧录程序后单片机自动复位并运行程序的目的。
+mark
+
+下载运行
+点击"LOAD"按钮即可烧录代码到单片机中。
+image.png
+
+烧录成功
+mark
+
+实验现象
+mark
+
+至此，我们已经学会了如何使用STM32CubeMX快速生成MDK的工程，点亮一个LED，接下来一节讲述如何使用 STM32CubeMX初始化GPIO进行按键检测。
