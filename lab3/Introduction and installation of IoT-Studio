@@ -1,0 +1,74 @@
+1. 物联网一站式开发工具 —— IoT Studio
+IoT Studio 是支持 LiteOS 嵌入式系统软件开发的工具，提供了代码编辑、编译、烧录 及调试等一站式开发体验，支持 C、C++、汇编等多种开发语言，让您快速，高效地进 行物联网开发。
+
+
+
+2. IoT Studio 支持的硬件
+IoT Studio 目前支持 Cortex-M0，Cortex-M4，Cortex-M7，Cortex-A7，ARM926EJ-S，RISC-V 等芯片架构。
+
+IoT Studio 目前已经适配了多种开发板，主流支持小熊派IoT开发套件，另外还支持 GD、ST、HiSilicon、Fudan
+Microelectronics 等主流厂商的开发板。
+
+ST：STM32F429IG，STM32F411RE，STM32L431RB，STM32L431RC，STM32F746ZG
+GD：GD32VF103V-EVAL
+HiSilicon：Hi3516CV300，Hi3516CV500，Hi3516EV200，Hi3516EV300,Hi3518EV300
+Fudan Microelectronics：FM33A04xx
+IoT Studio 支持新增 MCU 列表，以满足用户其他开发板的业务需求。
+
+3. IoT Studio安装
+3.1. 下载IoT Studio:
+IoT Studio下载地址如下：
+
+https://developer.obs.cn-north-4.myhuaweicloud.com/idea/IoT-Studio.zip
+
+下载会得到一份压缩包，其中包含一份安装指南，详细的安装教程可以参考该文档。
+
+3.2. 一键安装IoT Studio
+使用一键安装方式，无须再手动安装其他工具，安装步骤如下：
+
+双击运行IoT-Studio_0.3.5.exe文件开始安装。
+
+选择我同意此协议：
+
+
+
+选择安装路径，可以改动，不要有中文和空格，这里我保持默认：
+
+
+
+确认设置，开始安装：
+
+
+
+安装完成，选择是否安装ST-Link和JLink驱动和工具，推荐全选：
+
+
+
+3.3. 安装develop tools
+IoT Studio安装成功之后会自动运行，在首次运行时检测到没有开发工具包，选择“是”，软件会调用浏览器开始下载，下载好之后双击运行developTools.exe。
+
+软件会自动将需要用到的开发工具解压到C:\Users\Administrator\openSourceTools目录：
+
+
+
+这里我是Administrator，不同的用户目录名称不同！
+
+之后软件会自动开始安装ST-Link和J-**Link**，根据提示安装即可。
+
+打开工具目录，里面有两个路径需要我们在IoT Studio中配置：
+
+
+
+GNU Tools Arm Embedded：存放arm-gnone-eabi-gcc编译器的路径，用来编译程序
+
+GNU MCU Eclipse：存放make工具的路径，用来构建编译；
+
+这两个路径仅作了解即可，下一节创建项目时会说明如何在IoT Studio中配置。
+
+3.4. 启动IoT Studio
+安装完develop Tools之后，再次启动IoT Studio，无提示说明开发工具安装成功，IoT Studio的主界面如下：
+
+
+
+4. IoT Studio使用指南
+在IoT Studio启动页面，选择用户指导文档，即可打开 IoT Studio 完整的使用指南，在以后使用的过程中遇到任何问题，都可以在此文档中找到答案。
