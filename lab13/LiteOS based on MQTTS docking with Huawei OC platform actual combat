@@ -1,0 +1,448 @@
+1. LiteOS OC MQTT 抽象组件
+概述
+为了适应各种各样的使用mqtt接入华为OC的模式，特采用该层次接口，对上提供应用所需的接口，对下允许接入方式的灵活适配。
+
+OC MQTT AL的api接口声明在<oc_mqtt_al.h>中，使用相关的接口需要包含该头文件。
+
+配置并连接
+对接服务器的所有信息保存在结构体oc_mqtt_config_t中，其定义在oc_mqtt_al.h中，如下：
+
+typedef struct
+{
+    en_oc_mqtt_mode  boot_mode;     //对接模式：直连模式和bs模式
+    uint8_t          lifetime;      //保持连接时长
+    char            *server_addr;   //mqtt服务器地址，ip或者域名
+    char            *server_port;   //mqtt服务器端口
+    en_mqtt_al_security_t   sec_type;      //当前仅支持crt模式
+    char            *id;            //设备对接ID，默认使用NOTEID（设备标识码）对接
+    char            *pwd;           //设备秘钥
+    //int           device_mode;    //未使用
+    fn_oc_mqtt_msg_deal     msg_deal;//接收到数据的回调函数
+    void            *msg_deal_arg;   //回调函数参数
+}oc_mqtt_config_t;
+其中boot_mode是对接模式，对应华为平台的两种模式：
+
+typedef enum
+{
+    en_oc_mqtt_mode_bs_static_nodeid_hmacsha256_notimecheck_json =0,
+    en_oc_mqtt_mode_nobs_static_nodeid_hmacsha256_notimecheck_json,
+    en_oc_mqtt_mode_last,
+}en_oc_mqtt_mode;
+本实验中使用的是直连模式，选择第二种。
+
+在配置结构体完成之后，调用配置函数进行配置并连接，API如下：
+
+/**
+ * @brief the application use this function to configure the mqtt agent
+ *
+ * @param[in] param, refer to oc_mqtt_config_t
+ *
+ * @return code: define by en_oc_mqtt_err_code while 0 means success
+ */
+int oc_mqtt_config(oc_mqtt_config_t *param);
+函数参数很清楚，将存放对接信息的结构体指针传入即可，API的返回值是由en_oc_mqtt_err_code定义的枚举类型，方便定位问题：
+
+typedef enum
+{
+    en_oc_mqtt_err_ok          = 0,      ///< this means the status ok
+    en_oc_mqtt_err_parafmt,              ///< this means the parameter err format
+    en_oc_mqtt_err_network,              ///< this means the network wrong status
+    en_oc_mqtt_err_conversion,           ///< this means the mqtt version err
+    en_oc_mqtt_err_conclientid,          ///< this means the client id is err
+    en_oc_mqtt_err_conserver,            ///< this means the server refused the service for some reason(likely the id and pwd)
+    en_oc_mqtt_err_conuserpwd,           ///< bad user name or passwd
+    en_oc_mqtt_err_conclient,            ///< the client id /user/pwd is right, but does not allowed
+    en_oc_mqtt_err_subscribe,            ///< this means subscribe the topic failed
+    en_oc_mqtt_err_publish,              ///< this means subscribe the topic failed
+    en_oc_mqtt_err_configured,           ///< this means we has configured, please deconfigured it and then do configure again
+    en_oc_mqtt_err_noconfigured,         ///< this means we have not configure it yet,so could not connect
+    en_oc_mqtt_err_noconected,           ///< this means the connection has not been built, so you could not send data
+    en_oc_mqtt_err_gethubaddrtimeout,    ///< this means get the hub address timeout
+    en_oc_mqtt_err_sysmem,               ///< this means the system memory is not enough
+    en_oc_mqtt_err_system,               ///< this means that the system porting may have some problem,maybe not install yet
+    en_oc_mqtt_err_last,
+}en_oc_mqtt_err_code_t;
+数据上报
+连接成功之后，向华为云平台上报数据需要关注两部分：
+
+发布消息主题：这个OC_MQTT组件会自动帮我们搞定；
+发布消息指令：发布时由用户指定；
+发布消息内容：在使用JSON数据格式通信时，需要在本地将数据封装为JSON格式，OC_MQTT组件中已经编写了一个助手程序，帮助我们封装和数据。
+数据封装
+上报华为云平台的数据格式如下：
+
+{
+    "msgType": "deviceReq",
+    "data": [{
+        "serviceId": "Lightness",
+        "serviceData": {
+            "Lightness": 123
+        }
+    }]
+}
+这个数据格式是固定的，用户指定的只有serviceId和service_data，所以OC_MQTT提供了一个助手组件，使用时包含如下的头文件即可：
+
+#include <oc_mqtt_assistant.h>
+在该文件中，对于封装有效数据的结构体是：
+
+typedef struct
+{
+    char           *name;    ///< key name
+    char           *buf;     ///< used to storage the key value
+    int             len;     ///< how long the key value
+    en_value_type   type;    ///< the value type
+}tag_key_value;
+name：键名，比如Lightness；
+buf：键值，比如123；
+len：有效数据缓冲区长度；
+type：键值类型；
+键值类型已经枚举出了，支持如下三种类型，如下：
+
+typedef enum
+{
+    en_key_value_type_int = 0,
+    en_key_value_type_string,
+    en_key_value_type_array,
+}en_value_type;
+上述这个 tag_key_value 只是一条有效数据，对于需要同时上报多条数据的情况，助手程序也提供了一个链表，使用时只需要将next指针指向下一条数据即可。
+
+typedef struct
+{
+    void            *next;
+    tag_key_value    item;
+}tag_key_value_list;
+将数据存放在链表及结构体中之后，完成了初步封装，需要再加上上报华为云的信息，整体存放在下面的结构体中：
+
+typedef struct
+{
+    char                  *serviceid;
+    tag_key_value_list    *paralst;     //之前封装的有效数据链表
+    char                  *eventtime;
+    en_oc_mqtt_has_more    hasmore;
+}tag_oc_mqtt_report;
+其中eventtime可以留空，值为NULL即可，hasmore用来表明是否还有更多的信息，枚举列表如下：
+
+typedef enum
+{
+    en_oc_mqtt_has_more_no = 0,
+    en_oc_mqtt_has_more_yes =1,
+}en_oc_mqtt_has_more;
+最后，上报数据封装完成，使用如下API将结构体数据格式化为一个cjson*类型的数据，便于使用：
+
+cJSON *oc_mqtt_json_fmt_report(tag_oc_mqtt_report  *report);
+上报消息
+上面我们封装的消息是一个cjson数据链表，接下来首先包含cJSON组件的头文件：
+
+#include <cJSON.h>
+然后调用cJSON组件提供的API将cjson数据链表直接打印为一个不格式化的字符串，方便发送：
+
+(char *) cJSON_PrintUnformatted(const cJSON *item);
+最后，调用OC_MQTT提供的API，上报这个字符串：
+
+/**
+ * @brief the application use this function to send message to the default topic(old interface)
+ *
+ * @param[in] msg:the message to send
+ *
+ * @param[in] msg_len:the message length
+ *
+ * @param[in] qos: defines as the mqtt does
+ *
+ * @return code: define by en_oc_mqtt_err_code while 0 means success
+ */
+int oc_mqtt_report(uint8_t *msg,int len, int qos);
+msg：刚刚转化完成打印出的字符串指针；
+len：字符串长度；
+qos：发布消息质量，如下；
+发布消息质量枚举值如下(在mqtt_al.h中)：
+
+/** @brief enum all the qos supported for the application */
+typedef enum
+{
+    en_mqtt_al_qos_0 = 0,     ///< mqtt QOS 0
+    en_mqtt_al_qos_1,         ///< mqtt QOS 1
+    en_mqtt_al_qos_2,         ///< mqtt QOS 2
+    en_mqtt_al_qos_err
+}en_mqtt_al_qos_t;
+命令接收
+配置连接华为云OC平台时，OC_MQTT组件会自动订阅主题：
+
+/huawei/v1/devices/{NoteId}/command/json
+当OC平台发布该主题数据时，OC_MQTT组件会拉起接收回调函数将数据保存，进而用户解析接收到的JSON数据即可，其中在上一篇文章中测试时，平台发送开启命令，客户端接收到的消息如下：
+
+{
+    "msgType":"cloudReq",
+    "serviceId":"Lightness",
+    "paras":{"LED_Ctrl":"on"},
+    "cmd":"LED_Ctrl",
+    "hasMore":0,
+    "mid":10
+}
+平台发送关闭命令，客户端接收到的消息如下：
+
+{
+    "msgType":"cloudReq",
+    "serviceId":"Lightness",
+    "paras":{"LED_Ctrl":"off"},
+    "cmd":"LED_Ctrl",
+    "hasMore":0,
+    "mid":11
+}
+接下来编写解析任务时可以参考此数据。
+
+下发数据接收回调函数
+实现该回调函数：
+
+static int app_msg_deal(void *arg,mqtt_al_msgrcv_t *msg)
+实现的时候，接收数据大小在msg->msg.len中，接收数据在msg->msg.data中。
+
+实现之后在最开始的连接信息结构体中配置即可：
+
+
+
+如果下发命令速度较快，可以使用队列接收数据，但是需要注意，使用会占用更多的动态内存空间。
+
+接收数据处理任务
+接收数据处理任务需要单独创建一个任务，与接收回调函数之间使用一个信号量进行同步，具体参考下面的示例。
+
+OC_MQTT组件自动初始化
+在SDK目录中的IoT_LINK_1.0.0\iot_link\link_main.c中可以看到自动初始化函数：
+
+
+
+2. 配置准备
+Makefile配置
+因为本次实验用到的组件较多：
+
+AT框架
+ESP8266设备驱动
+串口驱动框架
+cJSON组件
+SAL组件
+MQTT组件
+MBEDTLS组件
+OC_MQTT组件
+这些实验代码全部编译下来，有350KB，而小熊派开发板所使用的主控芯片STM32L431RCT6的 Flash 仅有256KB，会导致编译器无法链接出可执行文件，所以要在makefile中修改优化选项，修改为-Os参数，即最大限度的优化代码尺寸，并去掉-g参数，即代码只能下载运行，无法调试，如图：
+
+
+
+ESP8266设备配置
+在工程目录中的OS_CONFIG/iot_link_config.h文件中，配置ESP8266设备的波特率和设备名称:
+
+
+
+WIFI对接信息配置
+SDK：C:\Users\Administrator\.icode\sdk\IoT_LINK_1.0.0（其中Administrator是实验电脑的用户名）。
+
+在SDK目录中的iot_link\network\tcpip\esp8266_socket\esp8266_socket_imp.c文件中，配置连接信息：
+
+
+
+之后修改同路径下的esp8266_socket_imp.mk文件，如图，将 TOP_DIR 改为 SDK_DIR ：
+
+
+
+修改mbedtls路径配置
+在SDK目录中的iot_link\network\dtls\mbedtls\mbedtls.mk文件中，如图，将 TOP_DIR 改为 SDK_DIR ：
+
+
+
+修改paho_mqtt文件路径
+在SDK目录中的iot_link\network\mqtt\paho_mqtt\paho_mqtt.mk文件中，如图，将 TOP_DIR 改为 SDK_DIR ：
+
+
+
+3. 上云实验
+编写实验文件
+在 Demo 文件夹下创建cloud_test_demo文件夹，在其中创建oc_tls_mqtt_demo.c文件。
+
+编写以下代码：
+
+#include <osal.h>
+#include <oc_mqtt_al.h>
+#include <oc_mqtt_assistant.h>
+#include <cJSON.h>
+#include <string.h>
+
+#define DEFAULT_LIFETIME            60
+#define DEFAULT_SERVER_IPV4         "49.4.93.24"
+#define DEFAULT_SERVER_PORT         "8883"
+#define CN_MQTT_EP_NOTEID           "321321321321"
+#define CN_MQTT_EP_PASSWD           "4ac51ec23edeb3eb34e4"
+
+#define recv_buf_len 150
+static char recv_buffer[recv_buf_len];   //下发数据接收缓冲区
+static int  recv_datalen;                //表示接收数据长度
+
+osal_semp_t recv_sync;  //命令接收回调函数和处理函数之间的信号量
+
+static int app_msg_deal(void *arg,mqtt_al_msgrcv_t *msg)
+{
+    int ret = -1;
+
+    if(msg->msg.len < recv_buf_len)
+    {
+        //不超过缓冲区，保存数据
+        memcpy(recv_buffer,msg->msg.data,msg->msg.len );
+        recv_buffer[msg->msg.len] = '\0';
+        recv_datalen = msg->msg.len;
+
+        //释放信号量，交由数据处理线程进行处理
+        osal_semp_post(recv_sync);
+        ret = 0;
+    }
+    return ret;
+}
+
+static int task_recv_cmd_entry(void *args)
+{
+    while(1)
+    {
+        /* 阻塞等待信号量 */
+        osal_semp_pend(recv_sync,cn_osal_timeout_forever);
+
+        if(strstr(recv_buffer, "on"))
+        {
+                printf("-----------------LED ON !!! --------------------\r\n");
+        }
+        else if(strstr(recv_buffer, "off"))
+        {
+                printf("-----------------LED OFF !!! --------------------\r\n");
+        }
+    }
+    return 0;
+}
+
+static int task_report_msg_entry(void *args)
+{
+    int ret = -1;
+
+    oc_mqtt_config_t config;    // oc_mqtt 连接信息配置结构体
+    tag_key_value_list lst;     //有效数据结构体
+    int lightness_value = 0;   //亮度值
+    tag_oc_mqtt_report report;  //上报数据结构体
+    cJSON* root = NULL;         //存放上报数据的cjson链表
+    char* report_msg = NULL;    //存放上报数据的字符串
+
+    /* 设置连接信息 */
+    config.boot_mode = en_oc_mqtt_mode_nobs_static_nodeid_hmacsha256_notimecheck_json;
+    config.msg_deal = app_msg_deal;
+    config.msg_deal_arg = NULL;
+    config.lifetime = DEFAULT_LIFETIME;
+    config.server_addr = DEFAULT_SERVER_IPV4;
+    config.server_port = DEFAULT_SERVER_PORT;
+    config.id = CN_MQTT_EP_NOTEID;
+    config.pwd= CN_MQTT_EP_PASSWD;
+    config.sec_type = en_mqtt_al_security_cas;
+
+    /* 配置并对接云平台 */
+    ret = oc_mqtt_config(&config);
+    if(ret != en_oc_mqtt_err_ok)
+    {
+        printf("config and connect error, ret = %d.\r\n", ret);
+        return -1;
+    }
+    else
+    {
+        printf("config and connect success.\r\n");
+    }
+
+    /* 连接成功后，开始上报消息 */
+    while(1)
+    {
+        //封装数据链表
+        lst.item.name = "Lightness";
+        lst.item.buf = (char*)&lightness_value;
+        lst.item.len = sizeof(lightness_value);
+        lst.item.type = en_key_value_type_int;
+        lst.next = NULL;
+
+        //封装上报数据
+        report.hasmore = en_oc_mqtt_has_more_no;
+        report.paralst= &lst;
+        report.serviceid = "Lightness";
+        report.eventtime = NULL;
+
+        //转换为cjson*类型数据
+        root = oc_mqtt_json_fmt_report(&report);
+        if(NULL != root)
+        {
+            //打印为未格式化的字符串（去掉格式符，减小上报数据长度）
+            report_msg = cJSON_PrintUnformatted(root);
+
+            //发布消息
+            ret = oc_mqtt_report((uint8_t *)report_msg,strlen(report_msg),en_mqtt_al_qos_1);
+            if(ret != en_oc_mqtt_err_ok)
+            {
+                printf("report fail, ret = %d.\r\n", ret);
+                return -1;
+            }
+            else
+            {
+                printf("report success: lightness_value = %d, msg = %s\r\n", lightness_value, report_msg);
+            }
+            /* 一次消息发布完毕 */
+            //释放内存
+            osal_free(report_msg);
+            cJSON_Delete(root);
+
+        }
+        //改变亮度值，实际可以替换为采集实际亮度值
+        lightness_value++;
+        //挂起5s
+        osal_task_sleep(5*1000);
+    }
+}
+
+
+int standard_app_demo_main()
+{
+    /* 创建信号量 */
+    osal_semp_create(&recv_sync,1,0);
+
+    /* 创建任务 */
+    osal_task_create("task_reportmsg",task_report_msg_entry,NULL,0x800,NULL,8);
+    osal_task_create("task_recv_cmd",task_recv_cmd_entry,NULL,0x400,NULL,8);
+
+    return 0;
+}
+添加路径
+在user_demo.mk中添加如下：
+
+    #example for oc_tls_mqtt_demo
+    ifeq ($(CONFIG_USER_DEMO), "oc_tls_mqtt_demo")    
+        user_demo_src  = ${wildcard $(TOP_DIR)/targets/STM32L431_BearPi/Demos/cloud_test_demo/oc_tls_mqtt_demo.c}
+    endif
+添加位置如下：
+
+
+
+配置.sdkconfig
+
+
+特别说明：实验时需要关闭shell组件，否则会因动态内存分配失败而导致TLS无法连接到华为OC平台。
+
+上报数据实验结果
+编译，下载，在云端的实验现象如下：
+
+
+
+在本地的实验现象如下：
+
+
+
+命令下发实验结果
+在云端下发“on”命令：
+
+
+
+在串口助手中可以看到：
+
+
+
+下发“off”命令：
+
+
+
+在串口助手中可以看到：
+
