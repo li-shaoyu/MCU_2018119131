@@ -109,6 +109,7 @@ bool_t  osal_semp_pend(osal_semp_t semp,int timeout)
 }
 该接口的参数说明如下表：
 
+
 参数	描述
 semp	信号量索引ID
 timeout	32位值，具体见下文
